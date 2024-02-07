@@ -1,8 +1,7 @@
-/* \author Aaron Brown */
-// Create simple 3d highway enviroment using PCL
-// for exploring self-driving car sensors
+/* \author Anna-Lee McLean */
+// Filtering, segmenting and clustering streams of point cloud data from a LiDAR for obstacle detection 
+// for a self-driving car driving through a city.
 
-//#include "sensors/lidar.h"
 #include "render/render.h"
 #include "processPointClouds.h"
 // using templates for processPointClouds so also include .cpp to help linker
@@ -17,58 +16,38 @@ void cityBlock(pcl::visualization::PCLVisualizer::Ptr& viewer){
     // Filter point cloud using voxel grids
     float filterRes = 0.35;   // voxel grid size -> 0.35 x 0.35 x 0.35 (cm)
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloudFiltered = processor->FilterCloud(pointCloud, filterRes, Eigen::Vector4f (-10.0, -5.0, -3.0, 1), Eigen::Vector4f (25.0, 6.5, 0.3, 1));
-    renderPointCloud(viewer, cloudFiltered, "filteredCloud");
-}
+    //renderPointCloud(viewer, cloudFiltered, "filteredCloud");
 
-/*
-void simpleHighway(pcl::visualization::PCLVisualizer::Ptr& viewer)
-{
-    // ----------------------------------------------------
-    // -----Open 3D viewer and display simple highway -----
-    // ----------------------------------------------------
-    
-    // RENDER OPTIONS
-    bool renderScene = true;
-    std::vector<Car> cars = initHighway(renderScene, viewer);
-    
-    // TODO:: Create lidar sensor 
-    Lidar* lidar = new Lidar(cars, 0);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr point_cloud = lidar->scan();
-    //renderRays(viewer, lidar->position, point_cloud);
-    //renderPointCloud(viewer, point_cloud, "point_cloud", Color(1.0, 0.0, 0.0));
-
-    // TODO:: Create point processor
+    // Create point processor
     int maxIterations = 100;
     float distanceThreshold = 0.2;
-    std::pair<typename pcl::PointCloud<pcl::PointXYZ>::Ptr, typename pcl::PointCloud<pcl::PointXYZ>::Ptr> point_cloud_pair;
+    std::pair<typename pcl::PointCloud<pcl::PointXYZI>::Ptr, typename pcl::PointCloud<pcl::PointXYZI>::Ptr> point_cloud_pair;
 
-    ProcessPointClouds<pcl::PointXYZ>* ppc = new ProcessPointClouds<pcl::PointXYZ>();
-    point_cloud_pair = ppc->SegmentPlane(point_cloud, maxIterations, distanceThreshold);
+    point_cloud_pair = processor->SegmentPlane(cloudFiltered, maxIterations, distanceThreshold);
 
     // Render plane and obstacle point clouds
     renderPointCloud(viewer, point_cloud_pair.first, "plane_point_cloud", Color(0.0, 1.0, 0.0));
-    //renderPointCloud(viewer, point_cloud_pair.second, "obstacle_point_cloud", Color(1.0, 0.0, 0.0));
+    renderPointCloud(viewer, point_cloud_pair.second, "obstacle_point_cloud", Color(1.0, 0.0, 0.0));
 
-    // Create clusters within the obstacle pont cloud to distinguish the individual obstacles (cars)
-    std::vector<typename pcl::PointCloud<pcl::PointXYZ>::Ptr> distinct_obstacle_point_clouds = ppc->Clustering(point_cloud_pair.second, 1.5, 3, 100);
+    // Create clusters within the obstacle point cloud to distinguish the individual obstacles (cars and other objects of the sidewalk)
+    std::vector<typename pcl::PointCloud<pcl::PointXYZI>::Ptr> distinct_obstacle_point_clouds = processor->Clustering(point_cloud_pair.second, 0.7, 10, 250);
 
     int cluster_id = 0;
-    std::vector<Color> colors {Color(1,0,0), Color(1,1,0), Color(1,0,1)};
 
     for (const auto cluster : distinct_obstacle_point_clouds){
         std::cout << "cluster size: ";
-        ppc->numPoints(cluster);
-        renderPointCloud(viewer, cluster, "obstacle"+std::to_string(cluster_id), colors[cluster_id]);
+        processor->numPoints(cluster);
+        float c1 = (float) rand() / (RAND_MAX);
+        float c2 = (float) rand() / (RAND_MAX);
+        float c3 = (float) rand() / (RAND_MAX);
+        renderPointCloud(viewer, cluster, "obstacle"+std::to_string(cluster_id), Color(c1, c2, c3));
+
         // Add bounding boxes around each of the distinct obstacle point clouds
-        Box clusterBox = ppc->BoundingBox(cluster);
-        renderBox(viewer, clusterBox, cluster_id, colors[cluster_id], 0.5);
-        //renderBox(viewer, clusterBox, cluster_id);
+        Box clusterBox = processor->BoundingBox(cluster);
+        renderBox(viewer, clusterBox, cluster_id, Color(c1, c2, c3), 0.5);
         ++cluster_id;
     }
-
-    
 }
-*/
 
 //setAngle: SWITCH CAMERA ANGLE {XY, TopDown, Side, FPS}
 void initCamera(CameraAngle setAngle, pcl::visualization::PCLVisualizer::Ptr& viewer)
