@@ -20,6 +20,10 @@ void ProcessPointClouds<PointT>::numPoints(typename pcl::PointCloud<PointT>::Ptr
 }
 
 
+// Filter an input point cloud by voxel grid point reduction and region-based filtering using PCL built-in functions.
+// Voxel grid point reduction reduces the resolution of the input point cloud for faster processing since high detail is not needed for obstacle detection.
+// Region-based filtering crops the point cloud to 10 meters behind the car and 25 meters ahead in addition to considering only obstacles within the width of the road.
+// Region-based filtering also removes the roof points created from the lidar scan.
 template<typename PointT>
 typename pcl::PointCloud<PointT>::Ptr ProcessPointClouds<PointT>::FilterCloud(typename pcl::PointCloud<PointT>::Ptr cloud, float filterRes, Eigen::Vector4f minPoint, Eigen::Vector4f maxPoint)
 {
@@ -79,17 +83,18 @@ typename pcl::PointCloud<PointT>::Ptr ProcessPointClouds<PointT>::FilterCloud(ty
 }
 
 
+// Helper function for separating point clouds after completing segmentation
 template<typename PointT>
 std::pair<typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT>::Ptr> ProcessPointClouds<PointT>::SeparateClouds(pcl::PointIndices::Ptr inliers, typename pcl::PointCloud<PointT>::Ptr cloud) 
 {
-  // TODO: Create two new point clouds, one cloud with obstacles and other with segmented plane
+    // Create two new point clouds, one cloud with obstacles and other with segmented plane
     pcl::ExtractIndices<PointT> extractor;
     typename pcl::PointCloud<PointT>::Ptr plane_point_cloud {new pcl::PointCloud<PointT>()};    // New point cloud to store the plane points in.
     typename pcl::PointCloud<PointT>::Ptr obstacle_point_cloud {new pcl::PointCloud<PointT>()};    // New point cloud to store the obstacle points in.
 
     extractor.setInputCloud(cloud);
     extractor.setIndices(inliers);
-    extractor.setNegative(false);           // I think when the negative is set to false, the inliers are stored in the cloud object passed to the filter function.
+    extractor.setNegative(false);           // When the negative is set to false, the inliers are stored in the cloud object passed to the filter function.
     extractor.filter(*plane_point_cloud);   // Stores the points which belong to the plane in the plane point cloud.
 
     extractor.setNegative(true);            // When it's true, everything that's not the inliers are stored in the cloud object passed to the filter function.
@@ -103,7 +108,226 @@ std::pair<typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT
     return segResult;
 }
 
+// Custom RANSAC algorthim for segementing plane model from input point cloud
+template<typename PointT>
+std::pair<typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT>::Ptr> ProcessPointClouds<PointT>::Ransac(typename pcl::PointCloud<PointT>::Ptr cloud, int maxIterations, float distanceTol)
+{
+    // Time segmentation process
+    auto startTime = std::chrono::steady_clock::now();
 
+	std::unordered_set<int> inliersResult;
+	srand(time(NULL));
+
+	for (int i = 0; i<maxIterations; i++){
+
+		std::unordered_set<int> currentInliers;
+
+		// Randomly sample 3 points from input cloud to fit plane
+		while (currentInliers.size() < 3){
+			int r_idx = rand() % cloud->points.size();		// random integer between 0 and number of points minus 1
+			currentInliers.insert(r_idx);
+		}
+		
+		// get plane equation coefficients
+		auto it = currentInliers.begin();
+		PointT p1 = cloud->points[*it];
+		it++;
+		PointT p2 = cloud->points[*it];
+		it++;
+		PointT p3 = cloud->points[*it];
+
+		float A = (p1.z - p2.z)*(p3.y - p1.y) + (p2.y - p1.y)*(p3.z - p1.z);
+		float B = (p2.z - p1.z)*(p3.x - p1.x) + (p1.x - p2.x)*(p3.z - p1.z);
+		float C = (p1.y - p2.y)*(p3.x - p1.x) + (p2.x - p1.x)*(p3.y - p1.y);
+		float D = -(A*p1.x + B*p1.y + C*p1.z);
+
+		// Measure distance between every point and fitted plane
+		for (int i = 0; i<cloud->points.size(); i++){
+
+			// if point already in currentInliers, skip
+			if (currentInliers.contains(i)){
+				continue;	
+			}
+
+			PointT p = cloud->points[i];
+			float d = fabs(A*p.x + B*p.y + C*p.z + D)/sqrt(pow(A,2) + pow(B,2) + pow(C,2));
+			// If distance is smaller than threshold count it as inlier
+			if (d <= distanceTol){
+				currentInliers.insert(i);
+			}
+		}
+
+        // Keep track of result which has the most inliers
+		if (currentInliers.size() > inliersResult.size()){
+			inliersResult.swap(currentInliers);
+		}
+	}
+
+    typename pcl::PointIndices::Ptr inlierIndices (new pcl::PointIndices);
+    for (auto index : inliersResult){
+        inlierIndices->indices.push_back(index);
+    }
+
+    // Make sure segmentation was successful by seeing if inliers set is populated with data
+    if (inlierIndices->indices.size() == 0){
+        std::cerr << "Could not segment plane points from input cloud." << std::endl;
+    }
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+    std::cout << "plane segmentation took " << elapsedTime.count() << " milliseconds" << std::endl;
+
+    // We have the indices of the points belonging to the plane. Now we extract them from the original point cloud.
+    std::pair<typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT>::Ptr> segResult = SeparateClouds(inlierIndices, cloud);
+    return segResult;
+}
+
+
+template<typename PointT>
+void proximity(int point_id, std::vector<int>& cluster, KdTree3D<PointT>* tree, float distanceTol, std::unordered_set<int>& processed, const typename pcl::PointCloud<PointT>::Ptr cloud){
+	processed.insert(point_id);
+	cluster.push_back(point_id);
+	std::vector<int> nearby = tree->search(cloud->points[point_id],distanceTol);
+
+	for (const auto nearby_point_id : nearby){
+		if (!(processed.contains(nearby_point_id))){
+			proximity(nearby_point_id, cluster, tree, distanceTol, processed, cloud);
+		}
+	}
+	// by calling this function recursively, every node that is within a distanceTol radius from each other will be added to a cluster.
+	// you can't just add the nodes that are initially found on the first call because then a new cluster will be made for nodes that were
+	// close enough to be in the cluster but not within distanceTol of the current node.
+}
+
+
+// Euclidean clustering of detected obstacles using custom KdTree algortihm
+template<typename PointT>
+std::vector<typename pcl::PointCloud<PointT>::Ptr> ProcessPointClouds<PointT>::EuclideanCluster(const typename pcl::PointCloud<PointT>::Ptr cloud, float distanceTol, float minSize, float maxSize)
+{
+
+    // Time clustering process
+  	auto startTime = std::chrono::steady_clock::now();
+
+	std::vector<std::vector<int>> clusters;
+	std::unordered_set<int> processed;
+    KdTree3D<PointT>* tree = new KdTree3D<PointT>;
+
+    // Populate Kd Tree with cloud points
+    for (int i=0; i<cloud->points.size(); i++) 
+    	tree->insert(cloud->points[i],i); 
+
+    // create clusters
+	for (int i=0; i<cloud->points.size(); i++){
+		if (!(processed.contains(i))){
+			std::vector<int> cluster;
+			proximity(i, cluster, tree, distanceTol, processed, cloud);     // this function populates the cluster with all nearby nodes
+            if ((cluster.size() > minSize) && (cluster.size() < maxSize)){
+                clusters.push_back(cluster);
+            }/*
+            else{
+                for (int i : cluster){
+                    processed.erase(i);
+                }
+            }*/
+		}
+	}
+ 
+    if (clusters.size() == 0){
+        std::cerr << "Could not create clusters from input point cloud." << std::endl; 
+    }
+
+    std::vector<typename pcl::PointCloud<PointT>::Ptr> clusterClouds;
+
+  	for(std::vector<int> cluster : clusters){
+  		typename pcl::PointCloud<PointT>::Ptr clusterCloud(new pcl::PointCloud<PointT>());
+  		for(int indice: cluster){
+            PointT p;
+            p.x = cloud->points[indice].x;
+            p.y = cloud->points[indice].y;
+            p.z = cloud->points[indice].z;
+            p.intensity = cloud->points[indice].intensity;
+  			clusterCloud->points.push_back(p);
+        }
+        clusterClouds.push_back(clusterCloud);
+  	}
+
+    auto endTime = std::chrono::steady_clock::now();
+  	auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+  	std::cout << "clustering found " << clusters.size() << " and took " << elapsedTime.count() << " milliseconds" << std::endl;
+ 
+	return clusterClouds;
+}
+
+
+// Creates a bounding box around the extremities of a cluster
+template<typename PointT>
+Box ProcessPointClouds<PointT>::BoundingBox(typename pcl::PointCloud<PointT>::Ptr cluster)
+{
+
+    // Find bounding box for one of the clusters
+    PointT minPoint, maxPoint;
+    pcl::getMinMax3D(*cluster, minPoint, maxPoint);
+
+    Box box;
+    box.x_min = minPoint.x;
+    box.y_min = minPoint.y;
+    box.z_min = minPoint.z;
+    box.x_max = maxPoint.x;
+    box.y_max = maxPoint.y;
+    box.z_max = maxPoint.z;
+
+    return box;
+}
+
+
+// Saves point cloud data to a file
+template<typename PointT>
+void ProcessPointClouds<PointT>::savePcd(typename pcl::PointCloud<PointT>::Ptr cloud, std::string file)
+{
+    pcl::io::savePCDFileASCII (file, *cloud);
+    std::cerr << "Saved " << cloud->points.size () << " data points to "+file << std::endl;
+}
+
+
+// Loads point cloud data from a file into a PCL point cloud
+template<typename PointT>
+typename pcl::PointCloud<PointT>::Ptr ProcessPointClouds<PointT>::loadPcd(std::string file)
+{
+
+    typename pcl::PointCloud<PointT>::Ptr cloud (new pcl::PointCloud<PointT>);
+
+    if (pcl::io::loadPCDFile<PointT> (file, *cloud) == -1) //* load the file
+    {
+        PCL_ERROR ("Couldn't read file \n");
+    }
+    std::cerr << "Loaded " << cloud->points.size () << " data points from "+file << std::endl;
+
+    return cloud;
+}
+
+
+// Creates a stream of file paths which hold point cloud data
+template<typename PointT>
+std::vector<boost::filesystem::path> ProcessPointClouds<PointT>::streamPcd(std::string dataPath)
+{
+
+    std::vector<boost::filesystem::path> paths(boost::filesystem::directory_iterator{dataPath}, boost::filesystem::directory_iterator{});
+
+    // sort files in accending order so playback is chronological
+    sort(paths.begin(), paths.end());
+
+    return paths;
+
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+/* 
+    Functions which also perfom segmentation and
+    clustering but using PCL built-in functions.
+*/
+
+// Segments a plane using PCL built-in plane model and RANSAC algorithm
 template<typename PointT>
 std::pair<typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT>::Ptr> ProcessPointClouds<PointT>::SegmentPlane(typename pcl::PointCloud<PointT>::Ptr cloud, int maxIterations, float distanceThreshold)
 {
@@ -146,6 +370,7 @@ std::pair<typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT
 }
 
 
+// Euclidean clustering of detected obstacles using PCL built-in functions
 template<typename PointT>
 std::vector<typename pcl::PointCloud<PointT>::Ptr> ProcessPointClouds<PointT>::Clustering(typename pcl::PointCloud<PointT>::Ptr cloud, float clusterTolerance, int minSize, int maxSize)
 {
@@ -186,62 +411,4 @@ std::vector<typename pcl::PointCloud<PointT>::Ptr> ProcessPointClouds<PointT>::C
     std::cout << "clustering took " << elapsedTime.count() << " milliseconds and found " << clusters.size() << " clusters" << std::endl;
 
     return clusters;
-}
-
-
-template<typename PointT>
-Box ProcessPointClouds<PointT>::BoundingBox(typename pcl::PointCloud<PointT>::Ptr cluster)
-{
-
-    // Find bounding box for one of the clusters
-    PointT minPoint, maxPoint;
-    pcl::getMinMax3D(*cluster, minPoint, maxPoint);
-
-    Box box;
-    box.x_min = minPoint.x;
-    box.y_min = minPoint.y;
-    box.z_min = minPoint.z;
-    box.x_max = maxPoint.x;
-    box.y_max = maxPoint.y;
-    box.z_max = maxPoint.z;
-
-    return box;
-}
-
-
-template<typename PointT>
-void ProcessPointClouds<PointT>::savePcd(typename pcl::PointCloud<PointT>::Ptr cloud, std::string file)
-{
-    pcl::io::savePCDFileASCII (file, *cloud);
-    std::cerr << "Saved " << cloud->points.size () << " data points to "+file << std::endl;
-}
-
-
-template<typename PointT>
-typename pcl::PointCloud<PointT>::Ptr ProcessPointClouds<PointT>::loadPcd(std::string file)
-{
-
-    typename pcl::PointCloud<PointT>::Ptr cloud (new pcl::PointCloud<PointT>);
-
-    if (pcl::io::loadPCDFile<PointT> (file, *cloud) == -1) //* load the file
-    {
-        PCL_ERROR ("Couldn't read file \n");
-    }
-    std::cerr << "Loaded " << cloud->points.size () << " data points from "+file << std::endl;
-
-    return cloud;
-}
-
-
-template<typename PointT>
-std::vector<boost::filesystem::path> ProcessPointClouds<PointT>::streamPcd(std::string dataPath)
-{
-
-    std::vector<boost::filesystem::path> paths(boost::filesystem::directory_iterator{dataPath}, boost::filesystem::directory_iterator{});
-
-    // sort files in accending order so playback is chronological
-    sort(paths.begin(), paths.end());
-
-    return paths;
-
 }
