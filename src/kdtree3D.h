@@ -46,26 +46,26 @@ struct KdTree3D
 		}
 		if (depth%3==0){
 			if (new_node->point.x < tree_node->point.x){
-				insertHelper(tree_node->left, new_node, ++depth);
+				insertHelper(tree_node->left, new_node, depth+1);
 			}
 			else{
-				insertHelper(tree_node->right, new_node, ++depth);
+				insertHelper(tree_node->right, new_node, depth+1);
 			}
 		}
 		else if (depth%3==1){
 			if (new_node->point.y < tree_node->point.y){
-				insertHelper(tree_node->left, new_node, ++depth);
+				insertHelper(tree_node->left, new_node, depth+1);
 			}
 			else{
-				insertHelper(tree_node->right, new_node, ++depth);
+				insertHelper(tree_node->right, new_node, depth+1);
 			}
 		}
 		else if (depth%3==2){
 			if (new_node->point.z < tree_node->point.z){
-				insertHelper(tree_node->left, new_node, ++depth);
+				insertHelper(tree_node->left, new_node, depth+1);
 			}
 			else{
-				insertHelper(tree_node->right, new_node, ++depth);
+				insertHelper(tree_node->right, new_node, depth+1);
 			}
 		}
 	}
@@ -122,30 +122,30 @@ struct KdTree3D
 				// check left if the left most edge of the box is more left than the current nodes's x. 
 				// This means that the node is to the right of the left edge and we need to check
 				// if its left node is also to the right of the left most edge.
-				searchHelper(target, currentNode->left, ids, distanceTol, ++depth);
+				searchHelper(target, currentNode->left, ids, distanceTol, depth+1);
 			}
 			if ((target.x+distanceTol) > currentNode->point.x){
 				// check right if the right most edge of the box is further right than the node.
 				// We need to check if the node's right node is between the node and the right edge.
-				searchHelper(target, currentNode->right, ids, distanceTol, ++depth);
+				searchHelper(target, currentNode->right, ids, distanceTol, depth+1);
 			}
 		}
 		else if (depth%3==1){
 			// split tree using y axis
 			if ((target.y-distanceTol) < currentNode->point.y){
-				searchHelper(target, currentNode->left, ids, distanceTol, ++depth);
+				searchHelper(target, currentNode->left, ids, distanceTol, depth+1);
 			}
 			if ((target.y+distanceTol) > currentNode->point.y){
-				searchHelper(target, currentNode->right, ids, distanceTol, ++depth);
+				searchHelper(target, currentNode->right, ids, distanceTol, depth+1);
 			}
 		}
 		else if (depth%3==2){
 			// split tree using z axis
 			if ((target.z-distanceTol) < currentNode->point.z){
-				searchHelper(target, currentNode->left, ids, distanceTol, ++depth);
+				searchHelper(target, currentNode->left, ids, distanceTol, depth+1);
 			}
 			if ((target.z+distanceTol) > currentNode->point.z){
-				searchHelper(target, currentNode->right, ids, distanceTol, ++depth);
+				searchHelper(target, currentNode->right, ids, distanceTol, depth+1);
 			}
 		}
 	}
