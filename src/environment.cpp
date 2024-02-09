@@ -1,4 +1,3 @@
-/* \author Anna-Lee McLean */
 // Filtering, segmenting and clustering streams of point cloud data from a LiDAR for obstacle detection 
 // for a self-driving car driving through a city.
 
@@ -12,25 +11,24 @@ template<typename PointT>
 void cityBlock(pcl::visualization::PCLVisualizer::Ptr& viewer, ProcessPointClouds<PointT>* pointProcessor, const typename pcl::PointCloud<PointT>::Ptr& inputCloud){
 
     // Filter point cloud using voxel grids
-    float filterRes = 0.17;   // voxel grid size -> 0.35 x 0.35 x 0.35 (cm)
+    float filterRes = 0.30;   // voxel grid size -> 0.35 x 0.35 x 0.35 (cm)
     Eigen::Vector4f minPoint = Eigen::Vector4f(-10.0, -5.0, -2.0, 1);
     Eigen::Vector4f maxPoint = Eigen::Vector4f (25.0, 6.5, 0.3, 1);
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloudFiltered = pointProcessor->FilterCloud(inputCloud, filterRes, minPoint, maxPoint);
 
     // Segment road and obstacles using RANSAC plane segmentation
     int maxIterations = 100;
-    float distanceThreshold = 0.18;
+    float distanceThreshold = 0.16;
     std::pair<typename pcl::PointCloud<pcl::PointXYZI>::Ptr, typename pcl::PointCloud<pcl::PointXYZI>::Ptr> point_cloud_pair;
 
     point_cloud_pair = pointProcessor->Ransac(cloudFiltered, maxIterations, distanceThreshold);
 
     // Render segmented plane point cloud (road)
     renderPointCloud(viewer, point_cloud_pair.first, "plane_point_cloud", Color(0.0, 1.0, 0.0));
-    //renderPointCloud(viewer, point_cloud_pair.second, "obstacle_point_cloud", Color(1.0, 1.0, 0.0));
     
     // Create clusters within the obstacle point cloud to distinguish the individual obstacles (cars and other objects on the sidewalk)
-    float clusterTolerance = 0.41;
-    int minClusterPoints = 17;
+    float clusterTolerance = 0.44;
+    int minClusterPoints = 5;
     int maxClusterPoints = 510;
     std::vector<typename pcl::PointCloud<pcl::PointXYZI>::Ptr> distinct_obstacle_point_clouds = pointProcessor->EuclideanCluster(point_cloud_pair.second, clusterTolerance, minClusterPoints, maxClusterPoints);
 
@@ -39,11 +37,11 @@ void cityBlock(pcl::visualization::PCLVisualizer::Ptr& viewer, ProcessPointCloud
     for (const auto cluster : distinct_obstacle_point_clouds){
         std::cout << "cluster size: ";
         pointProcessor->numPoints(cluster);
-        renderPointCloud(viewer, cluster, "obstacle"+std::to_string(cluster_id), Color(0.0, 0.0, 1.0));
+        renderPointCloud(viewer, cluster, "obstacle"+std::to_string(cluster_id), Color(1.0, 0.0, 0.0));
 
         // Add bounding boxes around each of the distinct obstacle point clouds
         Box clusterBox = pointProcessor->BoundingBox(cluster);
-        renderBox(viewer, clusterBox, cluster_id, Color(0.0, 0.0, 1.0), 0.5);
+        renderBox(viewer, clusterBox, cluster_id, Color(1.0, 0.0, 0.0), 0.5);
         ++cluster_id;
     }
 }
@@ -84,15 +82,6 @@ int main (int argc, char** argv)
     std::vector<boost::filesystem::path> pathStream = pointProcessor->streamPcd("../data/pcd/data_1/");
     auto streamIterator = pathStream.begin();
     typename pcl::PointCloud<pcl::PointXYZI>::Ptr inputCloud;
-    /*
-    inputCloud = pointProcessor->loadPcd("../data/pcd/data_1/0000000006.pcd");
-    cityBlock(viewer, pointProcessor, inputCloud);
-    
-    while (!viewer->wasStopped ())
-    {
-        viewer->spinOnce ();
-    } 
-    */
     
     while (!viewer->wasStopped ()){
 
@@ -106,11 +95,8 @@ int main (int argc, char** argv)
 
         if (streamIterator == pathStream.end()){
             streamIterator = pathStream.begin();
-            //sleep(1);
         }
         
         viewer->spinOnce ();
-        //sleep(0.5);
     } 
-    
 }
