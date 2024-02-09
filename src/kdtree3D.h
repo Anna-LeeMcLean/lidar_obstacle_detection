@@ -1,4 +1,4 @@
-/* \author Anna-Lee McLean */
+// Implementing custom 3D KD Tree algorithm
 
 #include "render/render.h"
 #include <cmath>
@@ -72,9 +72,6 @@ struct KdTree3D
 
 	void insert(PointT point, int id)
 	{
-		// TODO: Fill in this function to insert a new point into the tree
-		// the function should create a new node and place correctly with in the root 
-
 		Node<PointT>* node = new Node<PointT>{point, id};
 		int depth = 0;
 		insertHelper(root, node, depth);
@@ -85,32 +82,13 @@ struct KdTree3D
 		if (currentNode == NULL){
 			return;
 		}
-		/*
+		
 		// check if currentNode in box
 		float dx = fabs(target.x - currentNode->point.x);
 		float dy = fabs(target.y - currentNode->point.y);
 		float dz = fabs(target.z - currentNode->point.z);
 		if ((dx <= distanceTol) && (dy <= distanceTol) && (dz <= distanceTol)){
 			//inside the box. check if euclidean distance is less than tolerance
-			float d = sqrt(pow(dx,2) + pow(dy,2) + pow(dz,2));
-			if (d <= distanceTol)
-				ids.push_back(currentNode->id);
-		}
-		*/
-		bool dx1 = currentNode->point.x <= (target.x + distanceTol);
-		bool dx2 = currentNode->point.x >= (target.x - distanceTol);
-
-		bool dy1 = currentNode->point.y <= (target.y + distanceTol);
-		bool dy2 = currentNode->point.y >= (target.y - distanceTol);
-
-		bool dz1 = currentNode->point.z <= (target.z + distanceTol);
-		bool dz2 = currentNode->point.z >= (target.z - distanceTol);
-
-		if (dx1 && dx2 && dy1 && dy2 && dz1 && dz2){
-			//inside the box. check if euclidean distance is less than tolerance
-			float dx = target.x - currentNode->point.x;
-			float dy = target.y - currentNode->point.y;
-			float dz = target.z - currentNode->point.z;
 			float d = sqrt(pow(dx,2) + pow(dy,2) + pow(dz,2));
 			if (d <= distanceTol)
 				ids.push_back(currentNode->id);

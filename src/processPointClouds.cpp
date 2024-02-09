@@ -28,10 +28,9 @@ template<typename PointT>
 typename pcl::PointCloud<PointT>::Ptr ProcessPointClouds<PointT>::FilterCloud(typename pcl::PointCloud<PointT>::Ptr cloud, float filterRes, Eigen::Vector4f minPoint, Eigen::Vector4f maxPoint)
 {
 
-    // Time segmentation process
+    // Time filtering process
     auto startTime = std::chrono::steady_clock::now();
 
-    // TODO:: Fill in the function to do voxel grid point reduction and region based filtering
     // Voxel grid filtering
     typename pcl::PointCloud<PointT>::Ptr cloudFiltered (new pcl::PointCloud<PointT>);
     pcl::VoxelGrid<PointT> sor;
@@ -145,22 +144,19 @@ std::pair<typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT
 		for (int i = 0; i<cloud->points.size(); i++){
 
 			// if point already in currentInliers, skip
-			if (currentInliers.contains(i)){
+			if (currentInliers.contains(i))
 				continue;	
-			}
 
 			PointT p = cloud->points[i];
 			float d = fabs(A*p.x + B*p.y + C*p.z + D)/sqrt(pow(A,2) + pow(B,2) + pow(C,2));
 			// If distance is smaller than threshold count it as inlier
-			if (d <= distanceTol){
+			if (d <= distanceTol)
 				currentInliers.insert(i);
-			}
 		}
 
         // Keep track of result which has the most inliers
-		if (currentInliers.size() > inliersResult.size()){
+		if (currentInliers.size() > inliersResult.size())
 			inliersResult.swap(currentInliers);
-		}
 	}
 
     typename pcl::PointIndices::Ptr inlierIndices (new pcl::PointIndices);
@@ -223,12 +219,7 @@ std::vector<typename pcl::PointCloud<PointT>::Ptr> ProcessPointClouds<PointT>::E
 			proximity(i, cluster, tree, distanceTol, processed, cloud);     // this function populates the cluster with all nearby nodes
             if ((cluster.size() > minSize) && (cluster.size() < maxSize)){
                 clusters.push_back(cluster);
-            }/*
-            else{
-                for (int i : cluster){
-                    processed.erase(i);
-                }
-            }*/
+            }
 		}
 	}
  
@@ -240,12 +231,12 @@ std::vector<typename pcl::PointCloud<PointT>::Ptr> ProcessPointClouds<PointT>::E
 
   	for(std::vector<int> cluster : clusters){
   		typename pcl::PointCloud<PointT>::Ptr clusterCloud(new pcl::PointCloud<PointT>());
-  		for(int indice: cluster){
+  		for(int index: cluster){
             PointT p;
-            p.x = cloud->points[indice].x;
-            p.y = cloud->points[indice].y;
-            p.z = cloud->points[indice].z;
-            p.intensity = cloud->points[indice].intensity;
+            p.x = cloud->points[index].x;
+            p.y = cloud->points[index].y;
+            p.z = cloud->points[index].z;
+            p.intensity = cloud->points[index].intensity;
   			clusterCloud->points.push_back(p);
         }
         clusterClouds.push_back(clusterCloud);
@@ -334,15 +325,12 @@ std::pair<typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT
     // Time segmentation process
     auto startTime = std::chrono::steady_clock::now();
 
-    // TODO:: Fill in this function to find inliers for the cloud.
-
     // create coefficient, inliers and segmenter objects.
-    // INTERESTING NOTE: Two different ways to create pointers to an object on the heap. Either [* and =] OR [::Ptr and ()/{}].
+    // NOTE: Two different ways to create pointers to an object on the heap. Either [* and =] OR [::Ptr and ()/{}].
     typename pcl::ModelCoefficients* model_coefficients = new pcl::ModelCoefficients();
     typename pcl::PointIndices::Ptr inliers (new pcl::PointIndices());       // will store the indices of the points in the point cloud which belong to the plane.
     pcl::SACSegmentation<PointT> segmenter;                  // will segment the plane from the other objects in the point cloud using RANSAC.
     
-
     // setting parameters for the segment
     segmenter.setOptimizeCoefficients(true);
     segmenter.setModelType(pcl::SACMODEL_PLANE);    // Segmenting a plane from the input cloud
@@ -354,10 +342,9 @@ std::pair<typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT
     segmenter.setInputCloud(cloud);
     segmenter.segment(*inliers, *model_coefficients);     // I think this stores the points belonging to the plane in the inliers object
 
-    /// Make sure segmentation was successful by seeing if inliiers is poopulated with data
+    /// Make sure segmentation was successful by seeing if inliiers is populated with data
     if (inliers->indices.size() == 0){
         std::cerr << "Could not segment plane points from input cloud." << std::endl;
-        // we need to return an empty pair or something..
     }
 
     auto endTime = std::chrono::steady_clock::now();
@@ -374,13 +361,10 @@ std::pair<typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT
 template<typename PointT>
 std::vector<typename pcl::PointCloud<PointT>::Ptr> ProcessPointClouds<PointT>::Clustering(typename pcl::PointCloud<PointT>::Ptr cloud, float clusterTolerance, int minSize, int maxSize)
 {
-
     // Time clustering process
     auto startTime = std::chrono::steady_clock::now();
 
     std::vector<typename pcl::PointCloud<PointT>::Ptr> clusters;
-
-    // TODO:: Fill in the function to perform euclidean clustering to group detected obstacles
 
     // Create KDTree oject for extraction search method
     typename pcl::search::KdTree<PointT>::Ptr tree (new pcl::search::KdTree<PointT>);
